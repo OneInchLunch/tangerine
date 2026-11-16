@@ -1,0 +1,11 @@
+{
+  "apiBasePath": "/pulp/api/v3/",
+  "uiBasePath": "/ui/",
+  "authMode": "session",
+  "externalLoginUri": null,
+  "gatewayBasePath": "/sso/",
+  "passwordLoginEnabled": true,
+  "ssoManagedGroup": null,
+  "pollIntervalMs": 3000,
+  "extraVersion": ""
+}

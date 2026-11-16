@@ -1,0 +1,174 @@
+{{- if and .Values.gateway.enabled .Values.ops.cronjobs.directorySync.enabled }}
+{{- $full := include "tangerine.fullname" . }}
+{{- $db := include "tangerine.databaseSecretName" . }}
+{{- $sync := .Values.ops.cronjobs.directorySync }}
+{{- if not $sync.provider }}
+{{- fail "ops.cronjobs.directorySync.provider is required when enabled" }}
+{{- end }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ $full }}-directory-sync
+  labels:
+    {{- include "tangerine.labels" . | nindent 4 }}
+spec:
+  schedule: {{ $sync.schedule | quote }}
+  suspend: {{ $sync.suspend }}
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: {{ $sync.startingDeadlineSeconds }}
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: 600
+      ttlSecondsAfterFinished: 3600
+      template:
+        metadata:
+          labels:
+            {{- include "tangerine.selectorLabels" . | nindent 12 }}
+            {{- include "tangerine.gatewaySelectorLabels" . | nindent 12 }}
+        spec:
+          restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: {{ .Values.gateway.securityContext.runAsUser }}
+            runAsGroup: {{ .Values.gateway.securityContext.runAsGroup }}
+          containers:
+            - name: directory-sync
+              image: "{{ .Values.gateway.image.repository }}:{{ .Values.gateway.image.tag | default .Chart.AppVersion }}"
+              imagePullPolicy: {{ .Values.gateway.image.pullPolicy }}
+              command:
+                - python
+                - -m
+                - tangerine_gateway.cli
+                - sync-directory
+                - --provider
+                - {{ $sync.provider | quote }}
+                {{- if $sync.apply }}
+                - --apply
+                {{- end }}
+              envFrom:
+                - secretRef:
+                    name: {{ $db }}
+              env:
+                - name: TANGERINE_PULP_URL
+                  value: {{ .Values.gateway.pulpUrl | quote }}
+                - name: TANGERINE_PULP_USER
+                  value: {{ .Values.gateway.pulpUser | quote }}
+                - name: TANGERINE_PULP_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ required "gateway.existingSecret is required when gateway.enabled" .Values.gateway.existingSecret }}
+                      key: {{ .Values.gateway.pulpPasswordKey }}
+                - name: TANGERINE_SECRETS_DIR
+                  value: /run/tangerine/secrets
+                {{- with .Values.gateway.managedGroup }}
+                - name: TANGERINE_MANAGED_GROUP
+                  value: {{ . | quote }}
+                {{- end }}
+                {{- with .Values.gateway.adminGroup }}
+                - name: TANGERINE_ADMIN_GROUP
+                  value: {{ . | quote }}
+                {{- end }}
+                {{- with .Values.gateway.superadminGroup }}
+                - name: TANGERINE_SUPERADMIN_GROUP
+                  value: {{ . | quote }}
+                {{- end }}
+              volumeMounts:
+                - name: secrets
+                  mountPath: /run/tangerine/secrets
+                  readOnly: true
+          volumes:
+            - name: secrets
+              {{- if .Values.gateway.secretFilesSecret }}
+              secret:
+                secretName: {{ .Values.gateway.secretFilesSecret }}
+                optional: true
+              {{- else }}
+              emptyDir: {}
+              {{- end }}
+{{- end }}
+
+{{- if and .Values.gateway.enabled .Values.ops.cronjobs.pruneIdentities.enabled }}
+{{- $full := include "tangerine.fullname" . }}
+{{- $db := include "tangerine.databaseSecretName" . }}
+{{- $prune := .Values.ops.cronjobs.pruneIdentities }}
+{{- $configMap := required "ops.cronjobs.pruneIdentities.directoryConfigMap is required when enabled" $prune.directoryConfigMap }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ $full }}-prune-identities
+  labels:
+    {{- include "tangerine.labels" . | nindent 4 }}
+spec:
+  schedule: {{ $prune.schedule | quote }}
+  suspend: {{ $prune.suspend }}
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: {{ $prune.startingDeadlineSeconds }}
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: 600
+      ttlSecondsAfterFinished: 3600
+      template:
+        metadata:
+          labels:
+            {{- include "tangerine.selectorLabels" . | nindent 12 }}
+            {{- include "tangerine.gatewaySelectorLabels" . | nindent 12 }}
+        spec:
+          restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: {{ .Values.gateway.securityContext.runAsUser }}
+            runAsGroup: {{ .Values.gateway.securityContext.runAsGroup }}
+          containers:
+            - name: prune-identities
+              image: "{{ .Values.gateway.image.repository }}:{{ .Values.gateway.image.tag | default .Chart.AppVersion }}"
+              imagePullPolicy: {{ .Values.gateway.image.pullPolicy }}
+              command:
+                - python
+                - -m
+                - tangerine_gateway.cli
+                - prune-identities
+                - --directory-file
+                - /etc/tangerine/{{ $prune.directoryKey }}
+                {{- if $prune.apply }}
+                - --apply
+                {{- end }}
+              envFrom:
+                - secretRef:
+                    name: {{ $db }}
+              env:
+                - name: TANGERINE_PULP_URL
+                  value: {{ .Values.gateway.pulpUrl | quote }}
+                - name: TANGERINE_PULP_USER
+                  value: {{ .Values.gateway.pulpUser | quote }}
+                - name: TANGERINE_PULP_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ required "gateway.existingSecret is required when gateway.enabled" .Values.gateway.existingSecret }}
+                      key: {{ .Values.gateway.pulpPasswordKey }}
+                {{- with .Values.gateway.managedGroup }}
+                - name: TANGERINE_MANAGED_GROUP
+                  value: {{ . | quote }}
+                {{- end }}
+                {{- with .Values.gateway.adminGroup }}
+                - name: TANGERINE_ADMIN_GROUP
+                  value: {{ . | quote }}
+                {{- end }}
+                {{- with .Values.gateway.superadminGroup }}
+                - name: TANGERINE_SUPERADMIN_GROUP
+                  value: {{ . | quote }}
+                {{- end }}
+              volumeMounts:
+                - name: directory
+                  mountPath: /etc/tangerine
+                  readOnly: true
+          volumes:
+            - name: directory
+              configMap:
+                name: {{ $configMap }}
+{{- end }}

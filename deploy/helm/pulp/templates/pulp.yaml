@@ -1,0 +1,149 @@
+{{- include "pulp.validate" . -}}
+{{- $full := include "pulp.fullname" . -}}
+{{- $dbSecret := include "pulp.databaseSecretName" . -}}
+{{- $ingressAnnotations := dict -}}
+{{- if .Values.ingress.enabled -}}
+{{- if .Values.ingress.certManager.enabled -}}
+{{- $_ := set $ingressAnnotations "cert-manager.io/cluster-issuer" .Values.ingress.certManager.clusterIssuer -}}
+{{- end -}}
+{{- range $key, $value := .Values.ingress.annotations -}}
+{{- $_ := set $ingressAnnotations $key $value -}}
+{{- end -}}
+{{- end -}}
+apiVersion: repo-manager.pulpproject.org/v1
+kind: Pulp
+metadata:
+  name: {{ $full }}
+  labels:
+    {{- include "pulp.labels" . | nindent 4 }}
+spec:
+  image: {{ .Values.image.repository | quote }}
+  image_version: {{ .Values.image.tag | quote }}
+  image_web: {{ .Values.image.webRepository | quote }}
+  image_web_version: {{ .Values.image.webTag | quote }}
+  image_pull_policy: {{ .Values.image.pullPolicy | quote }}
+  {{- with .Values.image.pullSecrets }}
+  image_pull_secrets:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+
+  database:
+    external_db_secret: {{ $dbSecret | quote }}
+
+  {{- if .Values.objectStorage.enabled }}
+  object_storage_s3_secret: {{ include "pulp.s3SecretName" . | quote }}
+  {{- else }}
+  file_storage_storage_class: {{ .Values.fileStorage.storageClass | quote }}
+  file_storage_size: {{ .Values.fileStorage.size | quote }}
+  file_storage_access_mode: {{ .Values.fileStorage.accessMode | quote }}
+  {{- end }}
+
+  cache:
+    enabled: {{ .Values.cache.enabled }}
+    redis_image: {{ .Values.cache.image | quote }}
+    {{- with .Values.cache.storageClass }}
+    redis_storage_class: {{ . | quote }}
+    {{- end }}
+    {{- with .Values.resources.redis }}
+    redis_resource_requirements:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+
+  api:
+    replicas: {{ .Values.replicas.api }}
+    {{- with .Values.resources.api }}
+    resource_requirements:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+    {{- with .Values.nodeSelector }}
+    node_selector:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+    {{- with .Values.tolerations }}
+    tolerations:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+    {{- with .Values.affinity }}
+    affinity:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+
+  content:
+    replicas: {{ .Values.replicas.content }}
+    {{- with .Values.resources.content }}
+    resource_requirements:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+    {{- with .Values.nodeSelector }}
+    node_selector:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+    {{- with .Values.tolerations }}
+    tolerations:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+    {{- with .Values.affinity }}
+    affinity:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+
+  worker:
+    replicas: {{ .Values.replicas.worker }}
+    {{- with .Values.resources.worker }}
+    resource_requirements:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+    {{- with .Values.nodeSelector }}
+    node_selector:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+    {{- with .Values.tolerations }}
+    tolerations:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+    {{- with .Values.affinity }}
+    affinity:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+
+  web:
+    replicas: {{ .Values.replicas.web }}
+    {{- with .Values.resources.web }}
+    resource_requirements:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+    {{- with .Values.nodeSelector }}
+    node_selector:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+    {{- with .Values.tolerations }}
+    tolerations:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+    {{- with .Values.affinity }}
+    affinity:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+
+  {{- if .Values.ingress.enabled }}
+  ingress_type: ingress
+  ingress_class_name: {{ .Values.ingress.className | quote }}
+  ingress_host: {{ .Values.ingress.host | quote }}
+  ingress_tls_secret: {{ .Values.ingress.tlsSecret | quote }}
+  ingress_annotations:
+    {{- toYaml $ingressAnnotations | nindent 4 }}
+  {{- end }}
+
+  custom_pulp_settings: {{ include "pulp.settingsConfigMapName" . | quote }}
+
+  {{- if .Values.signing.enabled }}
+  signing_secret: {{ default (printf "%s-signing-key" (include "pulp.fullname" .)) .Values.signing.existingSecret | quote }}
+  signing_scripts: {{ default (printf "%s-signing-scripts" (include "pulp.fullname" .)) .Values.signing.existingScriptsSecret | quote }}
+  {{- end }}
+
+  {{- with .Values.adminPasswordSecret }}
+  admin_password_secret: {{ . | quote }}
+  {{- end }}
+  {{- with .Values.dbFieldsEncryptionSecret }}
+  db_fields_encryption_secret: {{ . | quote }}
+  {{- end }}

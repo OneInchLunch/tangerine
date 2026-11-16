@@ -1,0 +1,26 @@
+{{- /*
+The Pulp Operator writes these entries into settings.py verbatim after
+uppercasing the keys, so every value must be a valid Python expression.
+*/ -}}
+{{- $settings := .Values.settings -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "pulp.settingsConfigMapName" . }}
+  labels:
+    {{- include "pulp.labels" . | nindent 4 }}
+data:
+  {{- with $settings.allowedHosts }}
+  allowed_hosts: {{ . | toJson | quote }}
+  {{- end }}
+  {{- with $settings.csrfTrustedOrigins }}
+  csrf_trusted_origins: {{ . | toJson | quote }}
+  {{- end }}
+  session_cookie_secure: {{ ternary "True" "False" $settings.sessionCookieSecure | quote }}
+  csrf_cookie_secure: {{ ternary "True" "False" $settings.csrfCookieSecure | quote }}
+  {{- if $settings.secureProxySslHeader }}
+  secure_proxy_ssl_header: {{ "(\"HTTP_X_FORWARDED_PROTO\", \"https\")" | quote }}
+  {{- end }}
+  {{- range $key, $value := $settings.extra }}
+  {{ $key }}: {{ $value | quote }}
+  {{- end }}

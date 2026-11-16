@@ -1,0 +1,280 @@
+{{- if and .Values.gateway.enabled .Values.ops.jobs.enabled }}
+{{- $full := include "tangerine.fullname" . }}
+{{- $db := include "tangerine.databaseSecretName" . }}
+{{- if .Values.ops.jobs.migrate }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $full }}-migrate
+  labels:
+    {{- include "tangerine.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-weight: "-10"
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 3
+  activeDeadlineSeconds: 300
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        {{- include "tangerine.selectorLabels" . | nindent 8 }}
+        {{- include "tangerine.gatewaySelectorLabels" . | nindent 8 }}
+    spec:
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: {{ .Values.gateway.securityContext.runAsUser }}
+        runAsGroup: {{ .Values.gateway.securityContext.runAsGroup }}
+      initContainers:
+        - name: wait-for-postgres
+          image: "{{ .Values.gateway.image.repository }}:{{ .Values.gateway.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.gateway.image.pullPolicy }}
+          command:
+            - python
+            - -c
+            - |
+              import os, socket, sys, time
+              host = os.environ.get("POSTGRES_HOST", "")
+              port = int(os.environ.get("POSTGRES_PORT", "5432") or 5432)
+              for _ in range(60):
+                  try:
+                      socket.create_connection((host, port), 5).close()
+                      sys.exit(0)
+                  except OSError:
+                      time.sleep(2)
+              sys.exit(1)
+          envFrom:
+            - secretRef:
+                name: {{ $db }}
+      containers:
+        - name: migrate
+          image: "{{ .Values.gateway.image.repository }}:{{ .Values.gateway.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.gateway.image.pullPolicy }}
+          command: ["python", "-m", "tangerine_gateway.cli", "migrate"]
+          envFrom:
+            - secretRef:
+                name: {{ $db }}
+{{- end }}
+{{- if .Values.ops.jobs.managedRoles }}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $full }}-managed-roles
+  labels:
+    {{- include "tangerine.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-weight: "-7"
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 3
+  activeDeadlineSeconds: 300
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        {{- include "tangerine.selectorLabels" . | nindent 8 }}
+        {{- include "tangerine.gatewaySelectorLabels" . | nindent 8 }}
+    spec:
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: {{ .Values.gateway.securityContext.runAsUser }}
+        runAsGroup: {{ .Values.gateway.securityContext.runAsGroup }}
+      initContainers:
+        - name: wait-for-pulp
+          image: "{{ .Values.gateway.image.repository }}:{{ .Values.gateway.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.gateway.image.pullPolicy }}
+          command:
+            - python
+            - -c
+            - |
+              import os, sys, time, urllib.request
+              url = os.environ["TANGERINE_PULP_URL"].rstrip("/") + "/pulp/api/v3/status/"
+              for _ in range(60):
+                  try:
+                      urllib.request.urlopen(url, timeout=5)
+                      sys.exit(0)
+                  except Exception:
+                      time.sleep(2)
+              sys.exit(1)
+          env:
+            - name: TANGERINE_PULP_URL
+              value: {{ .Values.gateway.pulpUrl | quote }}
+      containers:
+        - name: managed-roles
+          image: "{{ .Values.gateway.image.repository }}:{{ .Values.gateway.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.gateway.image.pullPolicy }}
+          command: ["python", "-m", "tangerine_gateway.cli", "ensure-roles"]
+          env:
+            - name: TANGERINE_PULP_URL
+              value: {{ .Values.gateway.pulpUrl | quote }}
+            - name: TANGERINE_PULP_USER
+              value: {{ .Values.gateway.pulpUser | quote }}
+            - name: TANGERINE_PULP_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ required "gateway.existingSecret is required when gateway.enabled" .Values.gateway.existingSecret }}
+                  key: {{ .Values.gateway.pulpPasswordKey }}
+{{- end }}
+{{- if .Values.ops.jobs.accessPolicies.enabled }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $full }}-access-policies
+  labels:
+    {{- include "tangerine.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-weight: "-9"
+    helm.sh/hook-delete-policy: before-hook-creation
+data:
+  access-policies.json: |-
+{{ .Files.Get "files/access-policies.json" | indent 4 }}
+  apply_pulp_access_policies.py: |-
+{{ .Files.Get "files/apply_pulp_access_policies.py" | indent 4 }}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $full }}-access-policies
+  labels:
+    {{- include "tangerine.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-weight: "-8"
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 3
+  activeDeadlineSeconds: 300
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        {{- include "tangerine.selectorLabels" . | nindent 8 }}
+        {{- include "tangerine.gatewaySelectorLabels" . | nindent 8 }}
+    spec:
+      restartPolicy: Never
+      initContainers:
+        - name: wait-for-postgres
+          image: "{{ .Values.gateway.image.repository }}:{{ .Values.gateway.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.gateway.image.pullPolicy }}
+          command:
+            - python
+            - -c
+            - |
+              import os, socket, sys, time
+              host = os.environ.get("POSTGRES_HOST", "")
+              port = int(os.environ.get("POSTGRES_PORT", "5432") or 5432)
+              for _ in range(60):
+                  try:
+                      socket.create_connection((host, port), 5).close()
+                      sys.exit(0)
+                  except OSError:
+                      time.sleep(2)
+              sys.exit(1)
+          envFrom:
+            - secretRef:
+                name: {{ $db }}
+      containers:
+        - name: access-policies
+          image: "{{ .Values.ops.jobs.accessPolicies.image.repository }}:{{ .Values.ops.jobs.accessPolicies.image.tag }}"
+          imagePullPolicy: {{ .Values.ops.jobs.accessPolicies.image.pullPolicy }}
+          command:
+            - sh
+            - -c
+            - python /scripts/apply_pulp_access_policies.py --apply < /scripts/access-policies.json
+          envFrom:
+            - secretRef:
+                name: {{ required "ops.jobs.accessPolicies.databaseSecret is required when enabled" .Values.ops.jobs.accessPolicies.databaseSecret }}
+            {{- if .Values.ops.jobs.accessPolicies.settingsSecret }}
+            - secretRef:
+                name: {{ .Values.ops.jobs.accessPolicies.settingsSecret }}
+            {{- end }}
+          volumeMounts:
+            - name: scripts
+              mountPath: /scripts
+              readOnly: true
+      volumes:
+        - name: scripts
+          configMap:
+            name: {{ $full }}-access-policies
+{{- end }}
+{{- if .Values.ops.jobs.secretCheck }}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $full }}-secret-check
+  labels:
+    {{- include "tangerine.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-weight: "-6"
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 3
+  activeDeadlineSeconds: 300
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        {{- include "tangerine.selectorLabels" . | nindent 8 }}
+        {{- include "tangerine.gatewaySelectorLabels" . | nindent 8 }}
+    spec:
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: {{ .Values.gateway.securityContext.runAsUser }}
+        runAsGroup: {{ .Values.gateway.securityContext.runAsGroup }}
+      initContainers:
+        - name: wait-for-postgres
+          image: "{{ .Values.gateway.image.repository }}:{{ .Values.gateway.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.gateway.image.pullPolicy }}
+          command:
+            - python
+            - -c
+            - |
+              import os, socket, sys, time
+              host = os.environ.get("POSTGRES_HOST", "")
+              port = int(os.environ.get("POSTGRES_PORT", "5432") or 5432)
+              for _ in range(60):
+                  try:
+                      socket.create_connection((host, port), 5).close()
+                      sys.exit(0)
+                  except OSError:
+                      time.sleep(2)
+              sys.exit(1)
+          envFrom:
+            - secretRef:
+                name: {{ $db }}
+      containers:
+        - name: secret-check
+          image: "{{ .Values.gateway.image.repository }}:{{ .Values.gateway.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.gateway.image.pullPolicy }}
+          command: ["python", "-m", "tangerine_gateway.cli", "check-secrets"]
+          envFrom:
+            - secretRef:
+                name: {{ $db }}
+          env:
+            - name: TANGERINE_SECRETS_DIR
+              value: /run/tangerine/secrets
+          volumeMounts:
+            - name: secrets
+              mountPath: /run/tangerine/secrets
+              readOnly: true
+      volumes:
+        - name: secrets
+          {{- if .Values.gateway.secretFilesSecret }}
+          secret:
+            secretName: {{ .Values.gateway.secretFilesSecret }}
+            optional: true
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+{{- end }}
+{{- end }}

@@ -1,0 +1,17 @@
+node_modules
+dist
+.git
+.env
+.env.*
+*.log
+.DS_Store
+coverage
+playwright-report
+test-results
+**/__pycache__
+**/.pytest_cache
+**/*.egg-info
+# The SSO gateway ships as its own image.
+gateway
+# Local identity-provider credentials
+secrets

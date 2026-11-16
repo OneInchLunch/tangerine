@@ -1,0 +1,185 @@
+{{- if .Values.gateway.enabled -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "tangerine.gatewayName" . }}
+  labels:
+    {{- include "tangerine.gatewayLabels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.gateway.replicas }}
+  selector:
+    matchLabels:
+      {{- include "tangerine.gatewaySelectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "tangerine.gatewaySelectorLabels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      annotations:
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        fsGroup: {{ .Values.gateway.securityContext.fsGroup }}
+        seccompProfile:
+          type: RuntimeDefault
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if eq .Values.postgres.mode "internal" }}
+      initContainers:
+        - name: wait-for-postgres
+          image: "{{ .Values.postgres.image.repository }}:{{ .Values.postgres.image.tag }}"
+          imagePullPolicy: {{ .Values.postgres.image.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: {{ .Values.postgres.securityContext.runAsUser }}
+            runAsGroup: {{ .Values.postgres.securityContext.runAsGroup }}
+            capabilities:
+              drop:
+                - ALL
+          command:
+            - sh
+            - -c
+            - until pg_isready -h {{ include "tangerine.postgresName" . }} -p 5432 -U {{ .Values.postgres.auth.username }}; do sleep 2; done
+      {{- end }}
+      containers:
+        - name: gateway
+          image: "{{ .Values.gateway.image.repository }}:{{ .Values.gateway.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.gateway.image.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: {{ .Values.gateway.securityContext.runAsUser }}
+            runAsGroup: {{ .Values.gateway.securityContext.runAsGroup }}
+            capabilities:
+              drop:
+                - ALL
+          ports:
+            - name: http
+              containerPort: {{ .Values.gateway.port }}
+              protocol: TCP
+          envFrom:
+            - secretRef:
+                name: {{ include "tangerine.databaseSecretName" . }}
+          env:
+            - name: TANGERINE_PULP_URL
+              value: {{ .Values.gateway.pulpUrl | quote }}
+            - name: TANGERINE_PULP_USER
+              value: {{ .Values.gateway.pulpUser | quote }}
+            - name: TANGERINE_PULP_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ required "gateway.existingSecret is required when gateway.enabled" .Values.gateway.existingSecret }}
+                  key: {{ .Values.gateway.pulpPasswordKey }}
+            - name: TANGERINE_SECRETS_DIR
+              value: /run/tangerine/secrets
+            - name: TANGERINE_EXTERNAL_BASE_URL
+              value: {{ include "tangerine.gatewayExternalUrl" . | quote }}
+            - name: TANGERINE_UI_BASE_PATH
+              value: {{ .Values.config.uiBasePath | quote }}
+            - name: TANGERINE_GATEWAY_BASE_PATH
+              value: {{ .Values.config.gatewayBasePath | quote }}
+            - name: TANGERINE_ADDITIVE_MODE
+              value: {{ .Values.gateway.additiveMode | quote }}
+            - name: TANGERINE_ALLOW_HTTP_ISSUERS
+              value: {{ .Values.gateway.allowHttpIssuers | quote }}
+            - name: TANGERINE_SESSION_TTL_SECONDS
+              value: {{ .Values.gateway.sessionTtlSeconds | quote }}
+            - name: TANGERINE_STATE_TTL_SECONDS
+              value: {{ .Values.gateway.stateTtlSeconds | quote }}
+            - name: TANGERINE_PURGE_INTERVAL_SECONDS
+              value: {{ .Values.gateway.purgeIntervalSeconds | quote }}
+            - name: TANGERINE_AUDIT_RETENTION_DAYS
+              value: {{ .Values.gateway.auditRetentionDays | quote }}
+            - name: TANGERINE_REQUIRE_DATABASE
+              value: {{ .Values.gateway.requireDatabase | quote }}
+            - name: TANGERINE_SCOPED_TASK_TIMEOUT_SECONDS
+              value: {{ .Values.gateway.scopedTaskTimeoutSeconds | quote }}
+            {{- if .Values.gateway.tokenEncryptionKeySecret }}
+            - name: TANGERINE_TOKEN_ENCRYPTION_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.gateway.tokenEncryptionKeySecret }}
+                  key: {{ .Values.gateway.tokenEncryptionKeyKey }}
+            {{- end }}
+            {{- with .Values.gateway.managedGroup }}
+            - name: TANGERINE_MANAGED_GROUP
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with .Values.gateway.adminGroup }}
+            - name: TANGERINE_ADMIN_GROUP
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with .Values.gateway.superadminGroup }}
+            - name: TANGERINE_SUPERADMIN_GROUP
+              value: {{ . | quote }}
+            {{- end }}
+            - name: TANGERINE_RATE_LIMIT_PER_MINUTE
+              value: {{ .Values.gateway.rateLimitPerMinute | quote }}
+            - name: TANGERINE_RATE_LIMIT_BURST
+              value: {{ .Values.gateway.rateLimitBurst | quote }}
+            - name: TANGERINE_RATE_LIMIT_GLOBAL_PER_MINUTE
+              value: {{ .Values.gateway.rateLimitGlobalPerMinute | quote }}
+            {{- with .Values.gateway.trustedProxies }}
+            - name: TANGERINE_TRUSTED_PROXIES
+              value: {{ join "," . | quote }}
+            {{- end }}
+          volumeMounts:
+            - name: secrets
+              mountPath: /run/tangerine/secrets
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 20
+            timeoutSeconds: 3
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /sso/readyz
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 6
+          {{- with .Values.gateway.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      volumes:
+        - name: secrets
+          {{- if .Values.gateway.secretFilesSecret }}
+          secret:
+            secretName: {{ .Values.gateway.secretFilesSecret }}
+            optional: true
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+        - name: tmp
+          emptyDir: {}
+      {{- with .Values.gateway.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.gateway.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.gateway.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

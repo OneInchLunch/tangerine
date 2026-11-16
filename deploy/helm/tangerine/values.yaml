@@ -1,0 +1,267 @@
+replicaCount: 1
+
+image:
+  repository: oneinchlunch/tangerine-ui
+  tag: ""
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+config:
+  apiBasePath: /pulp/api/v3/
+  uiBasePath: /ui/
+  authMode: session
+  externalLoginUri: null
+  # Also drives the gateway Ingress path and the forwardAuth URL.
+  gatewayBasePath: /sso/
+  passwordLoginEnabled: true
+  # Pulp group whose members are provisioned by the identity provider. Matches
+  # TANGERINE_MANAGED_GROUP on the gateway and hides local password management.
+  ssoManagedGroup: null
+  pollIntervalMs: 3000
+  extraVersion: ""
+
+service:
+  type: ClusterIP
+  port: 8080
+
+# Gateway database. The default is a single PostgreSQL pod managed by this
+# chart. Set mode=external to use an existing Pulp-style database Secret
+# instead (POSTGRES_HOST, POSTGRES_PORT, POSTGRES_USERNAME, POSTGRES_PASSWORD,
+# POSTGRES_DB_NAME, POSTGRES_SSLMODE). The built-in pod is a single replica and
+# is not highly available.
+postgres:
+  mode: internal
+  externalSecret: ""
+  image:
+    repository: postgres
+    tag: "16-alpine"
+    pullPolicy: IfNotPresent
+  auth:
+    database: tangerine_gateway
+    username: tangerine
+    # A full Pulp-style Secret (all POSTGRES_* keys). When empty the chart
+    # creates one and generates the password (preserved across upgrades with
+    # lookup()). The username and database must match the values above.
+    existingSecret: ""
+    # Development-only fallback. Prefer existingSecret in production.
+    password: ""
+  storage:
+    size: 1Gi
+    storageClassName: ""
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  securityContext:
+    runAsUser: 999
+    runAsGroup: 999
+    fsGroup: 999
+  networkPolicy:
+    enabled: true
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+# SSO gateway. Disabled by default; when enabled it is deployed separately from
+# the static UI so a gateway restart cannot take the console down.
+#
+# The gateway authenticates Pulp by answering Traefik forwardAuth requests with
+# an identity header. Pulp must be configured once with the block shown in
+# Settings -> SSO, and the Pulp ingress must apply the two Middlewares this
+# chart creates (see NOTES.txt).
+gateway:
+  enabled: false
+  image:
+    repository: oneinchlunch/tangerine-gateway
+    tag: ""
+    pullPolicy: IfNotPresent
+  replicas: 2
+  port: 8080
+  # Public base URL; defaults to https://<first ingress host>.
+  externalBaseUrl: ""
+  pulpUrl: http://pulp-api.pulp.svc.cluster.local:24817
+  pulpUser: admin
+  # Secret containing the Pulp service-account password.
+  existingSecret: ""
+  pulpPasswordKey: PULP_PASSWORD
+  # Secret mounted at /run/tangerine/secrets. Each IdP client secret is a file.
+  secretFilesSecret: ""
+  managedGroup: ""
+  adminGroup: ""
+  superadminGroup: ""
+  additiveMode: true
+  # Development-only: permit plain-HTTP identity-provider issuers. Production
+  # providers must use https. Used by the local mock IdP.
+  allowHttpIssuers: false
+  sessionTtlSeconds: 28800
+  stateTtlSeconds: 600
+  # Secret holding the Fernet key used to encrypt the stored ID token. When
+  # unset the token is not persisted and logout omits id_token_hint.
+  tokenEncryptionKeySecret: ""
+  tokenEncryptionKeyKey: TOKEN_ENCRYPTION_KEY
+  purgeIntervalSeconds: 900
+  auditRetentionDays: 90
+  # Fail startup instead of silently using SQLite. Leave false for local dev.
+  requireDatabase: false
+  # Upper bound for the gateway-side wait on scoped writes.
+  scopedTaskTimeoutSeconds: 30
+  rateLimitPerMinute: 60
+  rateLimitBurst: 20
+  rateLimitGlobalPerMinute: 600
+  trustedProxies: []
+  # Namespaces allowed to reach the gateway. Only the ingress controller needs
+  # access; narrow this to the namespace running Traefik.
+  allowedNamespaces:
+    - kube-system
+  # Extra source CIDRs allowed to reach the gateway. Some CNIs (for example
+  # Calico) enforce NetworkPolicy against kubelet probes; add the node CIDR
+  # there. Cilium allows local-host probe traffic by default.
+  allowedCIDRs: []
+  resources: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  securityContext:
+    runAsUser: 1000
+    runAsGroup: 1000
+    fsGroup: 1000
+
+sso:
+  # Creates the Traefik Middlewares for header stripping and forwardAuth. They
+  # are not attached automatically: the Pulp API ingress has to reference them.
+  middlewares:
+    enabled: true
+
+ops:
+  # Short-lived install/update Jobs. They are idempotent and safe to re-run.
+  jobs:
+    enabled: true
+    migrate: true
+    managedRoles: true
+    secretCheck: true
+    accessPolicies:
+      # Opt in when the chart can read the Pulp database Secret. An all-in-one
+      # Pulp Deployment with a local database keeps this off.
+      enabled: false
+      # Required when enabled: the Pulp database Secret with POSTGRES_* keys.
+      databaseSecret: ""
+      settingsSecret: ""
+      image:
+        repository: pulp/pulp
+        tag: "3.123.0"
+        pullPolicy: IfNotPresent
+  cronjobs:
+    directorySync:
+      # Optional scheduled Entra app-assignment / Google mapped-group sync.
+      enabled: false
+      schedule: "0 * * * *"
+      provider: ""
+      apply: false
+      suspend: false
+      startingDeadlineSeconds: 300
+    pruneIdentities:
+      # Optional scheduled prune from an operator-supplied directory snapshot.
+      enabled: false
+      schedule: "0 3 * * *"
+      directoryConfigMap: ""
+      directoryKey: directory.json
+      apply: false
+      suspend: false
+      startingDeadlineSeconds: 300
+
+ingress:
+  enabled: true
+  className: traefik
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.priority: "1000"
+    traefik.ingress.kubernetes.io/router.tls: "true"
+  # The chart's / Exact path redirects the bare host root to /ui/. Set this to
+  # false when another application (including an existing Pulp route) owns the
+  # root and Tangerine should only claim /ui and /ui/.
+  rootRedirect:
+    enabled: true
+  hosts:
+    # Set host to "" for a hostless ingress, for example when the cluster is
+    # reached by IP and Kubernetes cannot accept an IP as an Ingress host.
+    # Clear ingress.tls as well.
+    - host: pulp.example.com
+      paths:
+        # Exact / keeps the root redirect from swallowing Pulp's paths. Never
+        # change this to Prefix: it would capture /pulp, /v2, and /token.
+        - path: /
+          pathType: Exact
+        - path: /ui
+          pathType: Exact
+        - path: /ui/
+          pathType: Prefix
+  tls:
+    - secretName: pulp-tls
+      hosts:
+        - pulp.example.com
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+podAnnotations: {}
+podLabels: {}
+
+podSecurityContext:
+  runAsNonRoot: true
+  fsGroup: 101
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  runAsUser: 101
+  runAsGroup: 101
+  capabilities:
+    drop:
+      - ALL
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 200m
+    memory: 128Mi
+
+livenessProbe:
+  httpGet:
+    path: /healthz
+    port: http
+  initialDelaySeconds: 5
+  periodSeconds: 20
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+readinessProbe:
+  httpGet:
+    path: /healthz
+    port: http
+  initialDelaySeconds: 2
+  periodSeconds: 10
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+podDisruptionBudget:
+  enabled: false
+  minAvailable: 1
+
+networkPolicy:
+  enabled: false

@@ -1,0 +1,102 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --font-sans:
+    "Inter", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  /* Wide-screen refinements start here; the layout below is tuned for 1600px. */
+  --breakpoint-3xl: 112rem;
+}
+
+/* Registered so sidebar collapse animates when the variable changes. */
+@property --app-sidebar-width {
+  syntax: "<length>";
+  inherits: true;
+  initial-value: 16rem;
+}
+
+@layer base {
+  :root {
+    --app-sidebar-width: 16rem;
+  }
+
+  html {
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    overscroll-behavior-y: none;
+  }
+
+  body {
+    @apply bg-zinc-50 font-sans text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100;
+    overscroll-behavior-y: none;
+  }
+
+  ::selection {
+    @apply bg-orange-500/25;
+  }
+
+  :focus-visible {
+    @apply outline-2 outline-offset-2 outline-orange-500;
+  }
+}
+
+@layer utilities {
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: theme("colors.zinc.400") transparent;
+  }
+
+  /*
+   * Semantic text sizes for the dense console. The base values match the
+   * original pixel sizes; they grow once the viewport reaches the 3xl
+   * breakpoint so a 4K display does not render 10px labels.
+   */
+  .text-micro {
+    font-size: 0.625rem;
+    line-height: 1rem;
+  }
+
+  .text-meta {
+    font-size: 0.6875rem;
+    line-height: 1rem;
+  }
+
+  .text-label {
+    font-size: 0.8125rem;
+    line-height: 1.25rem;
+  }
+
+  @media (min-width: 112rem) {
+    .text-micro {
+      font-size: 0.75rem;
+      line-height: 1.125rem;
+    }
+
+    .text-meta {
+      font-size: 0.8125rem;
+      line-height: 1.25rem;
+    }
+
+    .text-label {
+      font-size: 0.875rem;
+      line-height: 1.375rem;
+    }
+  }
+
+  .animate-in {
+    animation: animate-in 150ms ease-out;
+  }
+
+  @keyframes animate-in {
+    from {
+      opacity: 0;
+      transform: translateY(4px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+}

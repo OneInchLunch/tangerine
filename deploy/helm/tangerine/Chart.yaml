@@ -1,0 +1,32 @@
+apiVersion: v2
+name: tangerine
+description: A modern web console for Pulp, served as a static SPA alongside Pulp in Kubernetes.
+type: application
+version: 0.2.4
+appVersion: "0.1.4"
+kubeVersion: ">=1.25.0-0"
+home: https://github.com/OneInchLunch/tangerine
+sources:
+  - https://github.com/OneInchLunch/tangerine
+keywords:
+  - pulp
+  - repository
+  - content
+  - ui
+annotations:
+  artifacthub.io/license: Apache-2.0
+  artifacthub.io/links: |
+    - name: source
+      url: https://github.com/OneInchLunch/tangerine
+    - name: documentation
+      url: https://github.com/OneInchLunch/tangerine/blob/main/docs/README.md
+  artifacthub.io/images: |
+    - name: tangerine-ui
+      image: oneinchlunch/tangerine-ui:0.1.4
+    - name: tangerine-gateway
+      image: oneinchlunch/tangerine-gateway:0.1.0
+  artifacthub.io/changes: |
+    - kind: added
+      description: Superuser-only RPM repository metadata signing
+    - kind: changed
+      description: Image tag 0.1.4

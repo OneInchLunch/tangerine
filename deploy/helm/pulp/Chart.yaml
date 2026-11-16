@@ -1,0 +1,19 @@
+apiVersion: v2
+name: pulp
+description: Deploys Pulp with the Pulp Operator for use with Tangerine.
+type: application
+version: 0.2.1
+appVersion: "3.123.0"
+kubeVersion: ">=1.25.0-0"
+home: https://github.com/OneInchLunch/tangerine
+sources:
+  - https://github.com/OneInchLunch/tangerine
+keywords:
+  - pulp
+  - repository
+  - content
+annotations:
+  artifacthub.io/license: Apache-2.0
+  artifacthub.io/links: |
+    - name: Pulp Operator
+      url: https://pulpproject.org/pulp_operator/

@@ -1,0 +1,137 @@
+Tangerine has been deployed.
+
+{{- if .Values.ingress.enabled }}
+{{- $host := "" }}
+{{- range .Values.ingress.hosts }}
+{{- if and (not $host) .host }}
+{{- $host = .host }}
+{{- end }}
+{{- end }}
+{{- if $host }}
+Open the console:
+
+  http{{ if .Values.ingress.tls }}s{{ end }}://{{ $host }}{{ .Values.config.uiBasePath }}
+{{- else }}
+The chart ingress is hostless. Open the console at the ingress controller's
+address plus this path:
+
+  {{ .Values.config.uiBasePath }}
+{{- end }}
+
+The UI expects the Pulp API to be reachable on the same origin at:
+
+  {{ .Values.config.apiBasePath }}
+
+If Pulp is exposed through its own Ingress, make sure that the /ui path routes
+to this release's Service and that the Pulp API remains routed under /pulp.
+{{- if not .Values.ingress.rootRedirect.enabled }}
+
+This release does not claim the host root; only /ui and /ui/ are routed here.
+{{- end }}
+
+Traefik users: the chart sets router priority 1000 for /ui/ so it wins over a
+catch-all Pulp route. If your Pulp Ingress uses a higher explicit priority,
+raise the value in ingress.annotations.
+{{- else }}
+Service:
+
+  kubectl port-forward svc/{{ include "tangerine.fullname" . }} 8080:{{ .Values.service.port }}
+
+Then open:
+
+  http://localhost:8080{{ .Values.config.uiBasePath }}
+{{- end }}
+
+Important: the image must be built with VITE_BASE_PATH matching
+config.uiBasePath (default /ui/). The UI assets are baked at build time.
+
+{{- if .Values.gateway.enabled }}
+
+--- Single sign-on gateway -------------------------------------------------
+
+The gateway is deployed separately from the UI:
+
+  Service: {{ include "tangerine.gatewayName" . }}:{{ .Values.gateway.port }}
+
+Configure SSO in this order:
+
+1. Tangerine must run with config.authMode=gateway (currently
+   "{{ .Values.config.authMode }}"). Update the value and upgrade if needed.
+
+2. In Settings -> SSO, copy the generated Pulp settings block into Pulp. With
+   Pulp Operator, add each setting to a ConfigMap and point the CR at it;
+   keys are uppercased by the operator and values are Python literals:
+
+     kubectl -n <pulp-namespace> create configmap pulp-sso-settings \
+       --from-literal=authentication_backends='["django.contrib.auth.backends.ModelBackend", ...]' \
+       --from-literal=rest_framework__default_authentication_classes='[...]' \
+       --from-literal=authentication_json_header='"HTTP_X_TANGERINE_IDENTITY"' \
+       --from-literal=authentication_json_header_jq_filter='".user"'
+
+     kubectl -n <pulp-namespace> patch pulp <name> --type merge \
+       -p '{"spec":{"custom_pulp_settings":"pulp-sso-settings"}}'
+
+   The Pulp Operator names the field `custom_pulp_settings`, not
+   `pulp_settings`; a plain Pulp deployment edits its settings file instead.
+
+3. Attach BOTH middlewares to the dedicated /pulp router, in this order.
+   Do not apply them to the container registry routes (/v2, /token): a
+   gateway outage must not take the registry down.
+
+   With Pulp Operator the Ingress is a single Prefix / object, so the
+   middleware annotation would also cover /v2 and /token. Replace it with two
+   Ingresses that share the host and TLS secret: /pulp with both middlewares,
+   and /v2 plus /token without them. A non-operator Pulp ingress can be
+   annotated directly:
+
+     traefik.ingress.kubernetes.io/router.middlewares: \
+       {{ .Release.Namespace }}-{{ include "tangerine.gatewayName" . }}-strip-identity@kubernetescrd,\
+       {{ .Release.Namespace }}-{{ include "tangerine.gatewayName" . }}-forward-auth@kubernetescrd
+
+   The strip middleware must run first, otherwise a client can spoof the
+   identity header. Pulp must not be reachable except through this ingress.
+
+4. Create the IdP client secrets as a Kubernetes Secret and set
+   gateway.secretFilesSecret to its name. The UI only ever references the file
+   names.
+
+5. Restrict network access to Pulp. Without an enforced NetworkPolicy the
+   identity header is the only barrier, and any workload that can reach Pulp
+   can impersonate users.
+{{- end }}
+
+--- Gateway database --------------------------------------------------------
+
+{{- if eq .Values.postgres.mode "internal" }}
+
+This release created a single-replica PostgreSQL StatefulSet:
+
+  Service: {{ include "tangerine.postgresName" . }}:5432
+  Secret:  {{ include "tangerine.databaseSecretName" . }}
+
+It is not highly available. Back it up with pg_dump or a volume snapshot, and
+use postgres.mode=external with a managed database when you need HA/failover.
+
+{{- else }}
+
+The gateway uses the external database Secret:
+
+  {{ .Values.postgres.externalSecret }}
+
+The Secret must contain POSTGRES_HOST, POSTGRES_PORT, POSTGRES_USERNAME,
+POSTGRES_PASSWORD, POSTGRES_DB_NAME, and POSTGRES_SSLMODE, matching the Pulp
+operator's external database Secret format.
+
+{{- end }}
+
+The ID token is only stored when gateway.tokenEncryptionKeySecret is set. Create
+a Secret with a Fernet key and reference it:
+
+  kubectl -n {{ .Release.Namespace }} create secret generic tangerine-token-key \
+    --from-literal=TOKEN_ENCRYPTION_KEY="$(openssl rand -base64 32)"
+
+To copy providers from a previous SQLite gateway database:
+
+  python gateway/scripts/migrate_sqlite_to_postgres.py \
+    --source /path/to/tangerine-gateway.db \
+    --target "postgresql://..."

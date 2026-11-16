@@ -1,0 +1,38 @@
+node_modules
+dist
+coverage
+playwright-report
+test-results
+*.log
+.DS_Store
+
+# Python tooling for the SSO gateway
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.egg-info/
+
+# Local configuration and credentials
+.env
+.env.*
+*.local
+*.local.*
+local/
+compose.override.yaml
+docker-compose.override.yaml
+
+# Keys, certificates, and local secret values
+*.pem
+*.key
+*.crt
+*.csr
+*.p12
+*.pfx
+*.jks
+**/certs/
+**/secrets/
+**/values-secret*.yaml
+**/values-secret*.yml
+!deploy/helm/**/templates/*secret*.yaml
+kubeconfig
+*.kubeconfig

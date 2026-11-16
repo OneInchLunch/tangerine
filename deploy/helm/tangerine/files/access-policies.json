@@ -1,0 +1,190 @@
+{
+  "exporters/core/filesystem": [
+    {
+      "action": ["list", "retrieve"],
+      "condition": "has_model_or_domain_perms:core.view_filesystemexporter",
+      "effect": "allow",
+      "principal": "authenticated"
+    },
+    {
+      "action": ["create"],
+      "condition": "has_model_or_domain_perms:core.add_filesystemexporter",
+      "effect": "allow",
+      "principal": "authenticated"
+    },
+    {
+      "action": ["update", "partial_update"],
+      "condition": "has_model_or_domain_perms:core.change_filesystemexporter",
+      "effect": "allow",
+      "principal": "authenticated"
+    },
+    {
+      "action": ["destroy"],
+      "condition": "has_model_or_domain_perms:core.delete_filesystemexporter",
+      "effect": "allow",
+      "principal": "authenticated"
+    }
+  ],
+  "exporters/core/filesystem/exports": [
+    {
+      "action": ["list", "retrieve"],
+      "condition": "has_model_or_domain_perms:core.view_filesystemexport",
+      "effect": "allow",
+      "principal": "authenticated"
+    },
+    {
+      "action": ["create"],
+      "condition": "has_model_or_domain_perms:core.add_filesystemexport",
+      "effect": "allow",
+      "principal": "authenticated"
+    },
+    {
+      "action": ["destroy"],
+      "condition": "has_model_or_domain_perms:core.delete_filesystemexport",
+      "effect": "allow",
+      "principal": "authenticated"
+    }
+  ],
+  "exporters/core/pulp": [
+    {
+      "action": ["list", "retrieve"],
+      "condition": "has_model_or_domain_perms:core.view_pulpexporter",
+      "effect": "allow",
+      "principal": "authenticated"
+    },
+    {
+      "action": ["create"],
+      "condition": "has_model_or_domain_perms:core.add_pulpexporter",
+      "effect": "allow",
+      "principal": "authenticated"
+    },
+    {
+      "action": ["update", "partial_update"],
+      "condition": "has_model_or_domain_perms:core.change_pulpexporter",
+      "effect": "allow",
+      "principal": "authenticated"
+    },
+    {
+      "action": ["destroy"],
+      "condition": "has_model_or_domain_perms:core.delete_pulpexporter",
+      "effect": "allow",
+      "principal": "authenticated"
+    }
+  ],
+  "exporters/core/pulp/exports": [
+    {
+      "action": ["list", "retrieve"],
+      "condition": "has_model_or_domain_perms:core.view_pulpexport",
+      "effect": "allow",
+      "principal": "authenticated"
+    },
+    {
+      "action": ["create"],
+      "condition": "has_model_or_domain_perms:core.add_pulpexport",
+      "effect": "allow",
+      "principal": "authenticated"
+    },
+    {
+      "action": ["destroy"],
+      "condition": "has_model_or_domain_perms:core.delete_pulpexport",
+      "effect": "allow",
+      "principal": "authenticated"
+    }
+  ],
+  "importers/core/pulp": [
+    {
+      "action": ["list", "retrieve"],
+      "condition": "has_model_or_domain_perms:core.view_pulpimporter",
+      "effect": "allow",
+      "principal": "authenticated"
+    },
+    {
+      "action": ["create"],
+      "condition": "has_model_or_domain_perms:core.add_pulpimporter",
+      "effect": "allow",
+      "principal": "authenticated"
+    },
+    {
+      "action": ["update", "partial_update"],
+      "condition": "has_model_or_domain_perms:core.change_pulpimporter",
+      "effect": "allow",
+      "principal": "authenticated"
+    },
+    {
+      "action": ["destroy"],
+      "condition": "has_model_or_domain_perms:core.delete_pulpimporter",
+      "effect": "allow",
+      "principal": "authenticated"
+    }
+  ],
+  "importers/core/pulp/imports": [
+    {
+      "action": ["list", "retrieve"],
+      "condition": "has_model_or_domain_perms:core.view_pulpimport",
+      "effect": "allow",
+      "principal": "authenticated"
+    },
+    {
+      "action": ["create"],
+      "condition": "has_model_or_domain_perms:core.add_pulpimport",
+      "effect": "allow",
+      "principal": "authenticated"
+    },
+    {
+      "action": ["destroy"],
+      "condition": "has_model_or_domain_perms:core.delete_pulpimport",
+      "effect": "allow",
+      "principal": "authenticated"
+    }
+  ],
+  "roles": [
+    {
+      "action": ["list", "retrieve"],
+      "condition": "has_model_or_domain_perms:core.view_role",
+      "effect": "allow",
+      "principal": "authenticated"
+    },
+    {
+      "action": ["create", "update", "partial_update", "destroy"],
+      "effect": "allow",
+      "principal": "admin"
+    }
+  ],
+  "signing-services": [
+    {
+      "action": ["list", "retrieve"],
+      "condition": "has_model_or_domain_perms:core.view_signingservice",
+      "effect": "allow",
+      "principal": "authenticated"
+    }
+  ],
+  "tasks": [
+    {
+      "action": ["list", "retrieve"],
+      "condition": "has_model_or_domain_perms:core.view_task",
+      "effect": "allow",
+      "principal": "authenticated"
+    }
+  ],
+  "users": [
+    {
+      "action": ["list", "retrieve"],
+      "condition": "has_model_or_domain_perms:auth.view_user",
+      "effect": "allow",
+      "principal": "authenticated"
+    },
+    {
+      "action": ["create", "update", "partial_update", "destroy"],
+      "effect": "allow",
+      "principal": "admin"
+    }
+  ],
+  "workers": [
+    {
+      "action": ["list", "retrieve"],
+      "condition": "has_model_or_domain_perms:core.view_task",
+      "effect": "allow",
+      "principal": "authenticated"
+    }
+  ]
+}

@@ -1,0 +1,144 @@
+# Default values for the Pulp wrapper chart.
+#
+# This chart does not install Pulp Operator. Install it first (same namespace):
+#
+#   helm repo add pulp-operator \
+#     https://github.com/pulp/pulp-k8s-resources/raw/main/helm-charts/ --force-update
+#   helm upgrade --install pulp-operator pulp-operator/pulp-operator \
+#     --namespace pulp --set imagePullSecrets=[]
+#
+# The chart then creates the Pulp custom resource plus the Secrets and
+# ConfigMap it references.
+
+nameOverride: ""
+fullnameOverride: ""
+
+image:
+  repository: quay.io/pulp/pulp-minimal
+  tag: "3.123.0"
+  webRepository: quay.io/pulp/pulp-web
+  webTag: "3.123.0"
+  pullPolicy: IfNotPresent
+  # Pull secrets for the Pulp images. Public images need none.
+  pullSecrets: []
+
+replicas:
+  api: 1
+  content: 1
+  worker: 1
+  web: 1
+
+# Resource requirements per component. Empty means the operator defaults.
+resources:
+  api: {}
+  content: {}
+  worker: {}
+  web: {}
+  redis: {}
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+# External PostgreSQL. Pulp Operator can also run its own database, but this
+# chart targets a managed/external instance and requires a Secret with the
+# POSTGRES_* keys. Set existingSecret to skip creating it from these values.
+database:
+  existingSecret: ""
+  host: ""
+  port: 5432
+  username: pulp
+  password: ""
+  name: pulp
+  # The external server should require TLS. "require" encrypts without
+  # verifying the server certificate; use "verify-full" and mount the CA when
+  # you want verification.
+  sslmode: require
+
+cache:
+  enabled: true
+  image: docker.io/library/redis:7
+  # Leave empty for an emptyDir cache. Persistent Redis needs a storage class.
+  storageClass: ""
+
+# Object storage is the default because it keeps content out of the cluster.
+# When disabled, the chart asks the operator for a file-storage PVC instead.
+objectStorage:
+  enabled: true
+  # Use an existing Secret with s3-bucket-name, s3-endpoint, s3-region,
+  # s3-access-key-id, s3-secret-access-key, s3-addressing-style.
+  existingSecret: ""
+  s3:
+    bucket: ""
+    endpoint: ""
+    region: ""
+    accessKeyId: ""
+    secretAccessKey: ""
+    # Hetzner Object Storage works with path-style addressing.
+    addressingStyle: path
+
+fileStorage:
+  storageClass: ""
+  size: 10Gi
+  accessMode: ReadWriteOnce
+
+# Written to a ConfigMap referenced by custom_pulp_settings. Keys are
+# lowercased and the operator uppercases them in settings.py; values are raw
+# Python literals.
+settings:
+  # Kubelet probes send the pod IP as Host, so a narrow list breaks readiness.
+  allowedHosts:
+    - "*"
+  # Add the public origin when Pulp sits behind a proxy, for example
+  # ["https://pulp.example.com"].
+  csrfTrustedOrigins: []
+  sessionCookieSecure: true
+  csrfCookieSecure: true
+  # Trust Traefik's X-Forwarded-Proto for is_secure() decisions.
+  secureProxySslHeader: true
+  # Extra raw settings.py entries, for example:
+  #   PULP_CONTENT_PATH_PREFIX: '"/pulp/content/"'
+  extra: {}
+
+# RPM metadata signing. The operator mounts the key and registers
+# rpm-signing-service from the script Secret; Tangerine only selects it.
+#
+# Keep the private key out of values.yaml and git: create the Secret yourself
+# and set existingSecret. The key must be ASCII-armored and passphrase-less (the
+# signing job runs unattended); protect it with Secret RBAC and rotation.
+signing:
+  enabled: false
+  # Secret containing the armored private key under signingKey.
+  existingSecret: ""
+  signingKey: signing_service.gpg
+  # Or inline armored key for throwaway environments. Prefer existingSecret.
+  privateKey: ""
+  # The chart ships a hardened rpm_script.sh. Set existingScriptsSecret to use
+  # your own (the operator expects the key rpm_script.sh).
+  existingScriptsSecret: ""
+  scriptsSecretKey: rpm_script.sh
+  # Expected fingerprint, printed in NOTES and used by the verification docs.
+  fingerprint: ""
+
+ingress:
+  enabled: true
+  className: traefik
+  host: pulp.example.com
+  tlsSecret: pulp-tls
+  # When enabled, the chart adds the cert-manager annotation so the Pulp
+  # Ingress owns the certificate for the host. Tangerine should reference the
+  # same tlsSecret rather than issuing a second certificate.
+  certManager:
+    enabled: false
+    clusterIssuer: letsencrypt
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
+
+# Leave empty to let the operator generate the values.
+adminPasswordSecret: ""
+dbFieldsEncryptionSecret: ""
+
+serviceAccount:
+  # The operator creates and manages the Pulp ServiceAccount.
+  create: false

@@ -1,0 +1,30 @@
+name: tangerine
+
+services:
+  pulp:
+    image: pulp/pulp:3.123.0
+    container_name: tangerine-pulp
+    hostname: pulp
+    ports:
+      - "8080:80"
+    volumes:
+      - ./deploy/example/settings:/etc/pulp:Z
+      - pulp-storage:/var/lib/pulp
+      - pulp-pgsql:/var/lib/pgsql
+      - pulp-containers:/var/lib/containers
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python3 -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost/pulp/api/v3/status/').status == 200 else 1)\"",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 90s
+    restart: unless-stopped
+
+volumes:
+  pulp-storage:
+  pulp-pgsql:
+  pulp-containers:
